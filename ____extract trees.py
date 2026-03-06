@@ -302,6 +302,6 @@ for filepath in mxml_files:
             print(f"!Modified scene/descriptor: {relative_path}")
 
 
-input("\nDouble-check all modified MXMLs, drag and drop 'custommodels' folder to recompile files back to MBIN." \
+input("\nDouble-check all modified MXMLs, drag and drop 'custommodels' folder to MBINCompiler to recompile back to MBIN." \
 "\nMove 'custommodels' to '+BPG Redux Planets Core' directory."
 "\n\nPress Enter to exit...")
