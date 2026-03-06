@@ -1,0 +1,307 @@
+import os
+import sys
+import re
+import xml.etree.ElementTree as ET
+from hgpaktool import HGPakFile, Compressor, Platform
+
+# initialize compressor
+compressor = Compressor(Platform.WINDOWS) # for windows
+
+# VARIABLES
+
+pak_path = "" ## yours here, e.g. _____/steamapps/common/No Man's Sky/GAMEDATA/PCBANKS
+output_dir = "custommodels"
+
+extract_tree_models = ["MODELS/PLANETS/BIOMES/HQLUSH/HQTREES/"]
+mxml_files = []
+
+# FUNCTIONS
+
+# helper to parse and replace blocks
+def replace_material_file(filepath, relative_path):
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    countent_lower = content.lower()
+
+    # [a] check for CROSSLEAF <- these cause issues
+    if "crossleaf" in countent_lower:
+        return False
+    
+    # [b] for pine trees = unique samplers and flags
+    elif "twigbranch" in countent_lower or "pine" in countent_lower:
+
+    # create new blocks via parsing XML fragments (strip for valid start)
+        new_samplers_block = """
+<Property name="Samplers">
+	<Property name="Samplers" value="TkMaterialSampler" _index="0">
+		<Property name="Name" value="gDiffuseMap" />
+		<Property name="Map" value="TEXTURES/PLANETS/BIOMES/CAVE/MEDIUMPROP/MEDIUMGLOWPLANT.BASE.DDS" />
+		<Property name="IsCube" value="false" />
+		<Property name="UseCompression" value="true" />
+		<Property name="UseMipMaps" value="true" />
+		<Property name="IsSRGB" value="true" />
+		<Property name="MaterialAlternativeId" value="" />
+		<Property name="TextureAddressMode" value="Wrap" />
+		<Property name="TextureFilterMode" value="Trilinear" />
+		<Property name="Anisotropy" value="0" />
+	</Property>
+	<Property name="Samplers" value="TkMaterialSampler" _index="1">
+		<Property name="Name" value="gNormalMap" />
+		<Property name="Map" value="TEXTURES/PLANETS/BIOMES/CAVE/MEDIUMPROP/MEDIUMGLOWPLANT.BASE.NORMAL.DDS" />
+		<Property name="IsCube" value="false" />
+		<Property name="UseCompression" value="true" />
+		<Property name="UseMipMaps" value="true" />
+		<Property name="IsSRGB" value="false" />
+		<Property name="MaterialAlternativeId" value="" />
+		<Property name="TextureAddressMode" value="Wrap" />
+		<Property name="TextureFilterMode" value="Trilinear" />
+		<Property name="Anisotropy" value="0" />
+	</Property>
+</Property>
+""".strip()
+
+        new_flags_block = """
+<Property name="Flags">
+	<Property name="Flags" value="TkMaterialFlags" _index="0">
+		<Property name="MaterialFlag" value="_F01_DIFFUSEMAP" />
+	</Property>
+	<Property name="Flags" value="TkMaterialFlags" _index="1">
+		<Property name="MaterialFlag" value="_F03_NORMALMAP" />
+	</Property>
+	<Property name="Flags" value="TkMaterialFlags" _index="2">
+		<Property name="MaterialFlag" value="_F36_DOUBLESIDED" />
+	</Property>
+</Property>
+""".strip()
+
+
+    # [c] everything else - prism trees
+    else:
+
+
+        new_samplers_block = """
+<Property name="Samplers">
+	<Property name="Samplers" value="TkMaterialSampler" _index="0">
+		<Property name="Name" value="gDiffuseMap" />
+		<Property name="Map" value="TEXTURES/PLANETS/BIOMES/FLORAL/MEDIUMCREATURE/PROCGLOWGRADIENT.BASE.DDS" />
+		<Property name="IsCube" value="false" />
+		<Property name="UseCompression" value="true" />
+		<Property name="UseMipMaps" value="true" />
+		<Property name="IsSRGB" value="true" />
+		<Property name="MaterialAlternativeId" value="" />
+		<Property name="TextureAddressMode" value="Wrap" />
+		<Property name="TextureFilterMode" value="Trilinear" />
+		<Property name="Anisotropy" value="0" />
+	</Property>
+	<Property name="Samplers" value="TkMaterialSampler" _index="1">
+		<Property name="Name" value="gMasksMap" />
+		<Property name="Map" value="TEXTURES/PLANETS/BIOMES/FLORAL/MEDIUMCREATURE/PROCGLOWGRADIENT.BASE.MASKS.DDS" />
+		<Property name="IsCube" value="false" />
+		<Property name="UseCompression" value="true" />
+		<Property name="UseMipMaps" value="true" />
+		<Property name="IsSRGB" value="false" />
+		<Property name="MaterialAlternativeId" value="" />
+		<Property name="TextureAddressMode" value="Wrap" />
+		<Property name="TextureFilterMode" value="Trilinear" />
+		<Property name="Anisotropy" value="0" />
+	</Property>
+</Property>
+""".strip()
+
+        new_flags_block = """
+<Property name="Flags">
+	<Property name="Flags" value="TkMaterialFlags" _index="0">
+		<Property name="MaterialFlag" value="_F01_DIFFUSEMAP" />
+	</Property>
+	<Property name="Flags" value="TkMaterialFlags" _index="1">
+		<Property name="MaterialFlag" value="_F15_WIND" />
+	</Property>
+	<Property name="Flags" value="TkMaterialFlags" _index="2">
+		<Property name="MaterialFlag" value="_F21_VERTEXCUSTOM" />
+	</Property>
+	<Property name="Flags" value="TkMaterialFlags" _index="3">
+		<Property name="MaterialFlag" value="_F25_MASKS_MAP" />
+	</Property>
+	<Property name="Flags" value="TkMaterialFlags" _index="4">
+		<Property name="MaterialFlag" value="_F36_DOUBLESIDED" />
+	</Property>
+</Property>
+""".strip() # end else
+
+
+    # capture xml declaration and first comment (if present) so we can reinsert them
+    xml_decl = ""
+    leading_comment = ""
+    rest = content.lstrip()
+    prefix_len = len(content) - len(rest)
+    prefix = content[:prefix_len]
+
+    if rest.startswith('<?xml'):
+        end_decl = rest.find('?>')
+        if end_decl != -1:
+            xml_decl = rest[:end_decl+2].strip() + "\n"
+            rest = rest[end_decl+2:].lstrip()
+
+    if rest.startswith('<!--'):
+        end_comment = rest.find('-->')
+        if end_comment != -1:
+            leading_comment = rest[:end_comment+3].strip() + "\n"
+            rest = rest[end_comment+3:].lstrip()
+
+    # now rest should start with <Data ...>
+    try:
+        root = ET.fromstring(rest)
+    except ET.ParseError as e:
+        print(f"Failed to parse XML for {relative_path}: {e}")
+        return False
+
+    # parse fragments into Elements
+    new_samplers_elem = ET.fromstring(new_samplers_block)
+    new_flags_elem = ET.fromstring(new_flags_block)
+
+    # find top-level child indices for insertion/replacement
+    # root is the <Data> element. iterate its direct children to keep order
+    children = list(root)  # snapshot
+    replaced_any = False
+
+    # replace top-level Samplers block if present
+    for i, child in enumerate(children):
+        if child.tag == "Property" and child.attrib.get("name", "").lower() == "samplers":
+            root.remove(child)
+            root.insert(i, new_samplers_elem)
+            replaced_any = True
+            break
+
+    # replace top-level Flags block if present
+    # re-evaluate children list because we may have modified it
+    children = list(root)
+    for i, child in enumerate(children):
+        if child.tag == "Property" and child.attrib.get("name", "").lower() == "flags":
+            root.remove(child)
+            root.insert(i, new_flags_elem)
+            replaced_any = True
+            break
+
+    # set individual properties anywhere in the tree
+    replacements = {
+        "MaterialClass": "DoubleSided",
+        "CastShadow": "true",
+        "EnableLodFade": "true",
+        "UseShaderMill": "false",
+        "Shader": "SHADERS/UBERSHADER.SHADER.BIN",
+    }
+
+    for prop_name, new_value in replacements.items():
+        for elem in root.iter("Property"):
+            if elem.attrib.get("name", "") == prop_name:
+                elem.set("value", new_value) # set or replace the 'value' attribute (works for single-line properties)
+                replaced_any = True
+
+    if not replaced_any:
+        # nothing changed. still ok, but return False to indicate no change if needed
+        pass
+
+    # format tree with consistent tab indentation
+    ET.indent(root, space="\t", level=0)
+
+    # serialize without pretty-printing (prevents empty lines)
+    xml_body = ET.tostring(root, encoding="unicode")
+
+    # rebuild output
+    if xml_decl:
+        out = xml_decl
+    else:
+        out = '<?xml version="1.0" encoding="utf-8"?>\n'
+
+    if leading_comment:
+        out += leading_comment
+
+    out += xml_body + "\n"
+
+    with open(filepath, "w", encoding="utf-8", newline="\n") as f:
+        f.write(out)
+
+    return True
+
+
+# process .pak files in PCBANKS
+for filename in os.listdir(pak_path):
+    
+    if ".pak" in filename.lower():
+    
+        pak_file = os.path.join(pak_path, filename)
+        
+        with open(pak_file, "rb") as pak:
+
+            hgpak = HGPakFile(pak, compressor)
+            hgpak.read()
+
+            hgpak.unpack(output_dir, directories=extract_tree_models)
+
+
+input("\nExtracted HQLUSH MBINs. Drag and drop 'custommodels' folder to latest MBINCompiler.exe. Press Enter to continue...")
+
+#verify files decompiled
+for root, dirs, files in os.walk(output_dir):
+    for file in files:
+        if file.lower().endswith(".mxml"):
+            mxml_files.append(os.path.join(root, file))
+
+#if none found, exit
+if not mxml_files:
+    print("\n\nError. No MXML files found within 'custommodels'")
+    sys.exit(0)
+
+
+for filepath in mxml_files:
+    filename_lower = os.path.basename(filepath).lower()
+
+    normalized = os.path.normpath(filepath)  # use actual filepath for relative extraction
+    parts = normalized.replace("\\", "/").split("/")
+    if "models" in [p.lower() for p in parts]:
+        index = [p.lower() for p in parts].index("models")
+        relative_path = "/".join(parts[index:])
+    else:
+        relative_path = os.path.basename(filepath)
+
+    if (filename_lower.endswith("material.mxml")
+        and "bark" not in filename_lower
+        and "lambert" not in filename_lower):
+
+        ok = replace_material_file(filepath, relative_path)
+        if ok:
+            print(f"+Modified material: {relative_path}")
+        else:
+            print(f"-No changes made for: {relative_path}")
+
+    # process the other non-materials files, etc
+    else:
+
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # regex pattern:
+        # matches:
+        #MODELS\PLANETS\BIOMES\HQLUSH\HQTREES\....SCENE.MBIN
+        #MODELS\PLANETS\BIOMES\HQLUSH\HQTREES\....MATERIAL.MBIN
+        #But not ....GEOMETRY.MBIN etc.
+
+        pattern = re.compile(
+            r'(?<!CUSTOMMODELS[\\/])'  # prevent double prefix (both separators)
+            r'(MODELS[\\/]PLANETS[\\/]BIOMES[\\/]HQLUSH[\\/]HQTREES[\\/][^"\r\n]*?'
+            r'(?:SCENE|MATERIAL)\.MBIN)'
+        )
+
+        new_content = pattern.sub(r'CUSTOMMODELS\\\1', content)
+
+        if new_content != content:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(new_content)
+
+            print(f"!Modified scene/descriptor: {relative_path}")
+
+
+input("\nDouble-check all modified MXMLs, drag and drop 'custommodels' folder to recompile files back to MBIN." \
+"\nMove 'custommodels' to '+BPG Redux Planets Core' directory."
+"\n\nPress Enter to exit...")
