@@ -8,6 +8,7 @@ Modify and run '____extract trees.py' to update the custom models here: https://
 # Requirements
 Latest MBINCompiler.exe from:
 https://github.com/monkeyman192/MBINCompiler/releases
+.NET 8 (or check above link) - MBINCompiler requirement
 
 # Credits
 HGPAKTool by monkeyman192:
