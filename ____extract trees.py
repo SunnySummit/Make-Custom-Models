@@ -10,29 +10,22 @@ compressor = Compressor(Platform.WINDOWS) # for windows
 # VARIABLES
 
 pak_path = "" ## yours here, e.g. _____/steamapps/common/No Man's Sky/GAMEDATA/PCBANKS
-output_dir = "custommodels"
+output_dir = "CUSTOMMODELS"
 
-extract_tree_models = ["MODELS/PLANETS/BIOMES/HQLUSH/HQTREES/"]
+prism_output_dir = f"{output_dir}/TREES_PRISM"
+noleaves_output_dir = f"{output_dir}/TREES_NOLEAVES"
+
+extract_trees_prism_pine = ["MODELS/PLANETS/BIOMES/HQLUSH/HQTREES/"]
+extract_trees_no_leaves = ["MODELS/PLANETS/BIOMES/HQLUSH/HQTREES/"]
 mxml_files = []
 
-# FUNCTIONS
+# REPLACE BLOCKS
 
-# helper to parse and replace blocks
-def replace_material_file(filepath, relative_path):
-    with open(filepath, "r", encoding="utf-8") as f:
-        content = f.read()
+# create new blocks via parsing XML fragments (strip for valid start)
 
-    countent_lower = content.lower()
+########################## pine twig
 
-    # [a] check for CROSSLEAF <- these cause issues
-    if "crossleaf" in countent_lower:
-        return False
-    
-    # [b] for pine trees = unique samplers and flags
-    elif "twigbranch" in countent_lower or "pine" in countent_lower:
-
-    # create new blocks via parsing XML fragments (strip for valid start)
-        new_samplers_block = """
+samplers_block_pine_twig = """
 <Property name="Samplers">
 	<Property name="Samplers" value="TkMaterialSampler" _index="0">
 		<Property name="Name" value="gDiffuseMap" />
@@ -61,7 +54,7 @@ def replace_material_file(filepath, relative_path):
 </Property>
 """.strip()
 
-        new_flags_block = """
+flags_block_pine_twig = """
 <Property name="Flags">
 	<Property name="Flags" value="TkMaterialFlags" _index="0">
 		<Property name="MaterialFlag" value="_F01_DIFFUSEMAP" />
@@ -75,12 +68,9 @@ def replace_material_file(filepath, relative_path):
 </Property>
 """.strip()
 
+########################## prism leaves
 
-    # [c] everything else - prism trees
-    else:
-
-
-        new_samplers_block = """
+samplers_block_prism = """
 <Property name="Samplers">
 	<Property name="Samplers" value="TkMaterialSampler" _index="0">
 		<Property name="Name" value="gDiffuseMap" />
@@ -109,7 +99,7 @@ def replace_material_file(filepath, relative_path):
 </Property>
 """.strip()
 
-        new_flags_block = """
+flags_block_prism = """
 <Property name="Flags">
 	<Property name="Flags" value="TkMaterialFlags" _index="0">
 		<Property name="MaterialFlag" value="_F01_DIFFUSEMAP" />
@@ -128,6 +118,47 @@ def replace_material_file(filepath, relative_path):
 	</Property>
 </Property>
 """.strip() # end else
+
+########################## no leaves
+
+samplers_block_no_leaves = """
+<Property name="Samplers" />
+""".strip()
+
+flags_block_no_leaves = """
+<Property name="Flags" />
+""".strip() # end else
+
+
+# FUNCTIONS
+
+# helper to parse and replace blocks
+def replace_material_file(filepath, relative_path, nw_samplers_block, nw_flags_block, vrfy_pines_etc):
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    countent_lower = content.lower()
+
+    if vrfy_pines_etc: # if need to verify if pines in the file
+        
+        # [a] check for CROSSLEAF <- these cause issues
+        if "crossleaf" in countent_lower:
+            return False
+        
+        # [b] for pine trees = unique samplers and flags
+        elif "twigbranch" in countent_lower or "pine" in countent_lower:
+
+            new_samplers_block = samplers_block_pine_twig
+            new_flags_block = flags_block_pine_twig
+
+        # [c] everything else - prism trees
+        else:
+            new_samplers_block = nw_samplers_block
+            new_flags_block = nw_flags_block
+
+    else:
+        new_samplers_block = nw_samplers_block
+        new_flags_block = nw_flags_block
 
 
     # capture xml declaration and first comment (if present) so we can reinsert them
@@ -225,6 +256,89 @@ def replace_material_file(filepath, relative_path):
     return True
 
 
+# helper to extract and edit files
+def extract_edit_files(cm_subfolder, new_samplers_block, new_flags_block, check_pines_etc):
+
+    mxml_files = [] # reset list
+
+    # verify files decompiled
+    for root, dirs, files in os.walk(cm_subfolder):
+        for file in files:
+            name = file.lower()
+            path = os.path.join(root, file)
+
+            if name.endswith(".mxml"):
+                mxml_files.append(path)
+
+    #if none found, exit
+    if not mxml_files:
+        print(f"\n\nError. No MXML files found within '{cm_subfolder}'. Exiting...")
+        sys.exit(0)
+
+    print(f"\nModifying subfolder: {cm_subfolder}\n")
+
+    for filepath in mxml_files:
+        filename_lower = os.path.basename(filepath).lower()
+
+        normalized = os.path.normpath(filepath)  # use actual filepath for relative extraction
+        parts = normalized.replace("\\", "/").split("/")
+        if "models" in [p.lower() for p in parts]:
+            index = [p.lower() for p in parts].index("models")
+            relative_path = "/".join(parts[index:])
+        else:
+            relative_path = os.path.basename(filepath)
+
+        if (filename_lower.endswith("material.mxml")
+            and "bark" not in filename_lower
+            and "lambert" not in filename_lower):
+
+            ok = replace_material_file(filepath, relative_path, new_samplers_block, new_flags_block, check_pines_etc)
+            if ok:
+                print(f"+Modified material: {relative_path}")
+            else:
+                print(f"-No changes made for: {relative_path}")
+
+        # process the other non-materials files, etc
+        else:
+
+            with open(filepath, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # regex pattern:
+            # matches:
+            #MODELS\PLANETS\BIOMES\HQLUSH\HQTREES\....SCENE.MBIN
+            #MODELS\PLANETS\BIOMES\HQLUSH\HQTREES\....MATERIAL.MBIN
+            #But not ....GEOMETRY.MBIN etc.
+
+            pattern = re.compile(
+                r'(?:CUSTOMMODELS[\\/][^"\r\n]*?[\\/])?'
+                r'(MODELS[\\/]PLANETS[\\/]BIOMES[\\/]HQLUSH[\\/]HQTREES[\\/][^"\r\n]*?'
+                r'(?:SCENE|MATERIAL)\.MBIN)'
+            )
+
+            new_content = pattern.sub(rf'{cm_subfolder}\\\1', content)
+
+            
+            #pattern = re.compile(
+            #    r'(?<!CUSTOMMODELS[\\/])'  # prevent double prefix (both separators)
+            #    r'(MODELS[\\/]PLANETS[\\/]BIOMES[\\/]HQLUSH[\\/]HQTREES[\\/][^"\r\n]*?'
+            #    r'(?:SCENE|MATERIAL)\.MBIN)'
+            #)
+
+            #new_content = pattern.sub(r'CUSTOMMODELS\\\1', content)
+            
+
+            if new_content != content:
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+
+                print(f"!Modified scene/descriptor: {relative_path}")
+
+
+
+
+
+
 # process .pak files in PCBANKS
 for filename in os.listdir(pak_path):
     
@@ -237,69 +351,30 @@ for filename in os.listdir(pak_path):
             hgpak = HGPakFile(pak, compressor)
             hgpak.read()
 
-            hgpak.unpack(output_dir, directories=extract_tree_models)
+            hgpak.unpack(prism_output_dir, directories=extract_trees_prism_pine)
+            hgpak.unpack(noleaves_output_dir, directories=extract_trees_no_leaves)
 
-
-input("\nExtracted HQLUSH MBINs. Drag and drop 'custommodels' folder to latest MBINCompiler.exe. Press Enter to continue...")
-
-#verify files decompiled
+# remove geometry files before decompiling
 for root, dirs, files in os.walk(output_dir):
     for file in files:
-        if file.lower().endswith(".mxml"):
-            mxml_files.append(os.path.join(root, file))
+        name = file.lower()
+        path = os.path.join(root, file)
 
-#if none found, exit
-if not mxml_files:
-    print("\n\nError. No MXML files found within 'custommodels'")
-    sys.exit(0)
+        if "geometry" in name: # remove any geometry files
+            os.remove(path)
+            continue
+
+input("\nExtracted vanilla MBINs. Drag and drop 'custommodels' folder to latest MBINCompiler.exe. Press Enter to continue...")
+
+# extract and edit each subfolder with unique data
+extract_edit_files(prism_output_dir, samplers_block_prism, flags_block_prism, check_pines_etc = True)
+extract_edit_files(noleaves_output_dir, samplers_block_no_leaves, flags_block_no_leaves, check_pines_etc = False)
 
 
-for filepath in mxml_files:
-    filename_lower = os.path.basename(filepath).lower()
 
-    normalized = os.path.normpath(filepath)  # use actual filepath for relative extraction
-    parts = normalized.replace("\\", "/").split("/")
-    if "models" in [p.lower() for p in parts]:
-        index = [p.lower() for p in parts].index("models")
-        relative_path = "/".join(parts[index:])
-    else:
-        relative_path = os.path.basename(filepath)
 
-    if (filename_lower.endswith("material.mxml")
-        and "bark" not in filename_lower
-        and "lambert" not in filename_lower):
 
-        ok = replace_material_file(filepath, relative_path)
-        if ok:
-            print(f"+Modified material: {relative_path}")
-        else:
-            print(f"-No changes made for: {relative_path}")
-
-    # process the other non-materials files, etc
-    else:
-
-        with open(filepath, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # regex pattern:
-        # matches:
-        #MODELS\PLANETS\BIOMES\HQLUSH\HQTREES\....SCENE.MBIN
-        #MODELS\PLANETS\BIOMES\HQLUSH\HQTREES\....MATERIAL.MBIN
-        #But not ....GEOMETRY.MBIN etc.
-
-        pattern = re.compile(
-            r'(?<!CUSTOMMODELS[\\/])'  # prevent double prefix (both separators)
-            r'(MODELS[\\/]PLANETS[\\/]BIOMES[\\/]HQLUSH[\\/]HQTREES[\\/][^"\r\n]*?'
-            r'(?:SCENE|MATERIAL)\.MBIN)'
-        )
-
-        new_content = pattern.sub(r'CUSTOMMODELS\\\1', content)
-
-        if new_content != content:
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(new_content)
-
-            print(f"!Modified scene/descriptor: {relative_path}")
+#call here
 
 
 input("\nDouble-check all modified MXMLs, drag and drop 'custommodels' folder to MBINCompiler to recompile back to MBIN." \
