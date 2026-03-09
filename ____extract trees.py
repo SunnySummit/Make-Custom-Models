@@ -368,7 +368,7 @@ input("\nExtracted vanilla MBINs. Drag and drop 'custommodels' folder to latest 
 
 # extract and edit each subfolder with unique data
 extract_edit_files(prism_output_dir, samplers_block_prism, flags_block_prism, check_pines_etc = True)
-extract_edit_files(noleaves_output_dir, samplers_block_no_leaves, flags_block_no_leaves, check_pines_etc = False)
+extract_edit_files(noleaves_output_dir, samplers_block_no_leaves, flags_block_no_leaves, check_pines_etc = True)
 
 
 
